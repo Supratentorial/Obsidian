@@ -4,19 +4,21 @@
 /// <binding BeforeBuild='default' />
 
 var gulp = require("gulp");
-var rename = require("gulp-rename");
 var minifycss = require("gulp-minify-css");
 var sass = require("gulp-sass");
 var ts = require('gulp-typescript');
-var tslint = require("gulp-tslint");
-var sourcemaps = require("gulp-sourcemaps");
 var wiredep = require('wiredep');
 var inject = require('gulp-inject');
 var flatten = require('gulp-flatten');
 var clean = require('gulp-clean');
+var sourcemaps = require('gulp-sourcemaps');
 
 var paths = {
+    apiDir: "api/",
+    apiFiles: "api/**/*.ts",
     distDir: "build/",
+    distFiles: "build/*",
+    distApiJSFiles : "api/*.js",
     distVendorDir: "build/lib",
     distCSSDir: "build/css",
     distCSSFiles: "build/css/*.css",
@@ -24,29 +26,21 @@ var paths = {
     distJSFiles: "build/js/*.js",
     distIndexFile: "build/index.html",
     srcSCSSFiles: "styles/**/*.scss",
-    srcTSFiles: "public/**/*.ts",
+    srcTSFiles: "app/**/*.ts",
     srcIndexFile: "scripts/index.html",
-    typings: "typescript_definitions",
+    typings: "typings/**/*.ts",
     bower: "bower_components/**/*.min.js"
 };
 
-gulp.task("clean-styles", function () {
-    return gulp.src(paths.distCSSDir, {read: false})
+gulp.task("clean", function () {
+    gulp.src(paths.distFiles, {read: false})
+        .pipe(clean());
+    return gulp.src(paths.distApiJSFiles, {read: false})
         .pipe(clean());
 });
 
-gulp.task("clean-app-scripts"), function () {
-    return gulp.src(paths.distJSDir, {read: false})
-        .pipe(clean());
-};
-
-gulp.task("clean-vendor-scripts"), function () {
-    return gulp.src(paths.distVendorDir, {read: false})
-        .pipe(clean());
-};
-
 //Transpiles app SCSS files into minifed CSS and writes them into dist.
-gulp.task("transpile-scss", ["clean-styles"], function () {
+gulp.task("transpile-scss", ["clean"], function () {
     return gulp.src(paths.srcSCSSFiles)
         .pipe(sass({style: "expanded"}))
         .pipe(minifycss())
@@ -54,32 +48,37 @@ gulp.task("transpile-scss", ["clean-styles"], function () {
 });
 
 //Transpiles app typescript files to javascript and writes them into dist.
-gulp.task('transpile-ts', ["clean-app-scripts"], function () {
-    gulp.src(paths.srcTSFiles)
-        .pipe(flatten())
+gulp.task('transpile-ts', ["clean"], function () {
+    var clientResult = gulp.src([paths.apiFiles, paths.typings])
         .pipe(ts({
-            declarationFiles: false
-        }))
-        .pipe(gulp.dest(paths.distJSDir));
-    var index = gulp.src('api/index.ts')
-        .pipe(ts({declarationFiles: false}));
-    return index.pipe(gulp.dest('api/'));
+            target: 'ES6',
+            declarationFiles: false,
+            noExternalResolve: true,
+            module: "commonjs"
+        }));
+    clientResult.js.pipe(gulp.dest(paths.apiDir));
+    return gulp.src([paths.srcTSFiles, paths.typings])
+        .pipe(ts({
+            target: 'ES6',
+            declarationFiles: false,
+            noExternalResolve: true
+        })).js.pipe(gulp.dest(paths.distJSDir));
 });
 
 //Copies Bower JS main files to dist.
-gulp.task('copy-vendor-scripts', ["clean-vendor-scripts"], function () {
+gulp.task('copy-vendor-scripts', ["clean"], function () {
     return gulp.src(wiredep().js) //Bower main JS source files
         .pipe(gulp.dest(paths.distVendorDir));
 });
 
 //Copies Bower CSS main files to dist
-gulp.task('copy-vendor-styles', ["clean-styles"], function () {
+gulp.task('copy-vendor-styles', ["clean"], function () {
     return gulp.src(wiredep().css) //Bower main CSS source files
         .pipe(gulp.dest(paths.distCSSDir));
 });
 
 //Injects JS and CSS reference tags in index.html from Bower and app src files.
-gulp.task('wiredep', ["copy-vendor-scripts", "copy-vendor-styles", "transpile-scss", "transpile-ts"], function () {
+gulp.task('wiredep', ["clean", "transpile-scss", "transpile-ts"], function () {
     return gulp.src(paths.srcIndexFile)
         .pipe(wiredep.stream({
             fileTypes: {
@@ -116,6 +115,7 @@ gulp.task("watch", function () {
     gulp.watch(paths.srcSCSSFiles, ["wiredep"]);
     gulp.watch(paths.srcTSFiles, ["wiredep"]);
     gulp.watch(paths.srcIndexFile, ["wiredep"]);
+    gulp.watch(paths.apiFiles, ["transpile-ts"]);
 });
 
 gulp.task("default", ["wiredep"], function () {
